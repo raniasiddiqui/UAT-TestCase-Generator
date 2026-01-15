@@ -1,0 +1,7 @@
+streamlit
+nest_asyncio
+groq
+playwright
+pandas
+requests
+openpyxl
