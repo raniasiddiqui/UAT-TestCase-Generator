@@ -472,7 +472,7 @@ def parse_and_export_testcases(test_cases_str: str):
     'Automation Possibility': r'[o\*-]?\s*(?:\*\*)?Automation\s*Possibility(?:\*\*)?\s*:\s*(.+?)(?=\n\s*[o\*-]|\Z)',
     'Testing_Type': r'[o\*-]\s*(?:\*\*)?Testing\s*Type(?:\*\*)?\s*:\s*(.+?)(?=\n\s*[o\*-]|\Z)',
     'Priority': r'[o\*-]?\s*(?:\*\*)?Priority(?:\*\*)?\s*:\s*(.+?)(?=\n\s*[o\*-]|\Z)',
-    'Testing Phase': r'[o\*-]?\s*(?:\*\*)?Testing\s*Phase(?:\*\*)?\s*:\s*(.+?)(?=\n\s*[o\*-]|\Z)'
+    'Testing Phase': r'[o\*-]?\s*(?:\*\*)?Testing\s*Phase(?:\*\*)?\s*:\s*(.+?)(?=\n\s*[o\*-]|\Z)',
 
 }
 
@@ -952,3 +952,4 @@ with output_container:
         # Display the raw test cases
 
         st.markdown(st.session_state.all_test_cases_str)
+
