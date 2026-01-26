@@ -46,6 +46,28 @@ except Exception as e:
     st.error(f"Failed to initialize Groq client. Check your API key in config.json. Error: {e}")
     st.stop()
 
+# Light blue theme – pick one shade you like
+light_blue = "#a3d8ff"      # very light
+# light_blue = "#81d4fa"    # a bit more vivid
+# light_blue = "#4fc3f7"    # stronger but still friendly
+
+st.markdown(
+    f"""
+    <style>
+        button[kind="primary"] {{
+            background-color: {light_blue} !important;
+            border-color: {light_blue} !important;
+            color: black !important;           /* or #111 for better contrast */
+        }}
+        button[kind="primary"]:hover {{
+            background-color: #90caf9 !important;   /* slightly darker on hover */
+            border-color: #90caf9 !important;
+        }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 class GroqOSSAgent:
     """Base agent class using Groq models"""
     def __init__(self, name: str, system_message: str, model_name: str = DEFAULT_GROQ_MODEL):
@@ -808,7 +830,7 @@ with st.sidebar:
     st.markdown("Review the generated cases. If you need more, provide feedback below.")
     feedback = st.text_area("Feedback (e.g., 'add tests for the forgot password link'):", height=100, key="feedback_input")
     
-    feedback_button = st.button("🔄 Generate More Cases", use_container_width=True)
+    feedback_button = st.button("🔄 Generate More Cases", use_container_width=True, type="primary")
 
     st.divider()
     st.info(f"Using model: **{DEFAULT_GROQ_MODEL}**")
@@ -824,7 +846,7 @@ with st.sidebar:
         height=120,
         key="edit_prompt_input"
     )
-    edit_button = st.button("Update Test Case", use_container_width=True)
+    edit_button = st.button("Update Test Case", use_container_width=True, type="primary")
 
     # Optional: Show current test case
     # --------------------------------------------------------------
@@ -952,4 +974,5 @@ with output_container:
         # Display the raw test cases
 
         st.markdown(st.session_state.all_test_cases_str)
+
 
