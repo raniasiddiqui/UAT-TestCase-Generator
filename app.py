@@ -398,6 +398,7 @@ class PlannerAgentOSS(GroqOSSAgent):
         4. The steps under `Step-by-step actions` should not be a numbered list, instead a paragraph with all steps in a sequence without any numbering or bullet points.
         5. Step-by-step actions must be written as a continuous paragraph in plain business language.
         6. Steps should read like instructions for a real user (example: "The customer enters their email and password then clicks Login" — NOT technical commands)
+        7. The step by step actions or any fields of testcase should NOT include locator reccomendation itself. 
         Please always output the testcases as I described above.
 
         Structure your response with sections for each test type (e.g., ## Happy Path, ## Negative Path).
@@ -418,6 +419,7 @@ class PlannerAgentOSS(GroqOSSAgent):
         - Use the provided instruction, refined details, and locator recommendations/site insights as context for generating test cases
         - Generate only the test cases in this step, dont output any refined instruction, explanations, or locator recommendations.
         - First generate test cases for core functionalities and happy flows, including those derived from site crawling insights, covering basic flow, alternate flow, pre-conditions, post-conditions, validations/rules mentioned in the instruction.
+        - Dont include the locator reccomendation itself in the description of testcases fields, but instead use the insights from crawled data. Dont mention any locators in testcases.
         """
         super().__init__("PlannerOSS", system_message, model_name=DEFAULT_GROQ_MODEL)
 
@@ -974,6 +976,7 @@ with output_container:
         # Display the raw test cases
 
         st.markdown(st.session_state.all_test_cases_str)
+
 
 
 
