@@ -661,10 +661,75 @@ async def run_feedback_generation(feedback_prompt, status_placeholder):
 # --------------------------------------------------------------
 # 1. EDIT FUNCTION (replace your current run_edit_generation)
 # --------------------------------------------------------------
-async def run_edit_generation(test_case_id: str, edit_instruction: str, status_placeholder):
-    """Edit a test case using natural language instruction via LLM (fixed version)."""
+import re
+import streamlit as st
 
-    # ---- Normalize line endings ----
+
+def parse_test_case_block(block: str):
+    """
+    Extract:
+    - fields as dict
+    - original prefix (*, •, -, etc.)
+    - optional numeric heading (e.g., '2.')
+    """
+    fields = {}
+    prefix = "*"
+    numeric_header = None
+
+    lines = block.split("\n")
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Detect numeric header like "2."
+        num_match = re.match(r'^(\d+)\.$', stripped)
+        if num_match:
+            numeric_header = num_match.group(1)
+            continue
+
+        # Detect field lines
+        field_match = re.match(r'^([*•-])\s*(.+?):\s*(.*)', stripped)
+        if field_match:
+            prefix = field_match.group(1)
+            key = field_match.group(2).strip()
+            value = field_match.group(3).strip()
+            fields[key] = value
+
+    return fields, prefix, numeric_header
+
+def rebuild_test_case_block(fields: dict, prefix: str, numeric_header: str):
+    rebuilt = ""
+
+    # Restore numbering like "2."
+    if numeric_header:
+        rebuilt += f"{numeric_header}.\n\n"
+
+    # Restore bullet style
+    for key, value in fields.items():
+        rebuilt += f"{prefix} {key}: {value}\n"
+
+    return rebuilt.strip()
+async def detect_target_field(edit_instruction: str, fields: dict):
+    field_list = list(fields.keys())
+
+    detection_prompt = f"""
+You are a QA assistant.
+
+Edit Instruction:
+"{edit_instruction}"
+
+Available Fields:
+{field_list}
+
+Return ONLY the exact field name to edit.
+Do not return anything else.
+"""
+
+    response = await user.initiate_chat(planner, detection_prompt)
+    return response.strip()
+async def run_edit_generation(test_case_id: str, edit_instruction: str, status_placeholder):
+
+    # Normalize text
     st.session_state.all_test_cases_str = (
         st.session_state.all_test_cases_str
         .replace("\r\n", "\n")
@@ -672,134 +737,85 @@ async def run_edit_generation(test_case_id: str, edit_instruction: str, status_p
         .strip() + "\n"
     )
 
-    # Keep a backup before editing
-    st.session_state.all_test_cases_str_before_edit = st.session_state.all_test_cases_str
+    status_placeholder.update(label="🔍 Searching for test case...")
 
-    status_placeholder.update(label="🔍 Searching for the target test case...")
+    pattern = rf'(\d+\.\s*\n\s*\n)?(\s*[*•-]\s*Test Case ID:\s*{re.escape(test_case_id.strip())}.*?)(?=\n\d+\.|\Z)'
 
-    # ---- FIXED PATTERN ----
-    # Supports bullets (*, •) or numbers (1., 2., etc.)
-    # pattern = rf'((?:[*•]|\d+\.)\s*Test Case ID:\s*{re.escape(test_case_id.strip())}\s*\n.*?)(?=\n(?:[*•]|\d+\.)\s*Test Case ID:|\Z)'
-    pattern = rf'(?<=\n)([*•]|\d+\.)?\s*\* Test Case ID:\s*{re.escape(test_case_id.strip())}\s*\n.*?(?=\n(?:[*•]|\d+\.)?\s*\* Test Case ID:|\Z)'
+    match = re.search(pattern, st.session_state.all_test_cases_str, re.DOTALL)
 
-
-    current_match = re.search(pattern, st.session_state.all_test_cases_str, re.DOTALL)
-    if not current_match:
-        st.error(f"❌ Test case **{test_case_id}** not found in current list.")
-        with st.expander("🧾 DEBUG: Stored test cases (first 2000 chars)", expanded=False):
-            st.code(st.session_state.all_test_cases_str[:2000], language="markdown")
-        with st.expander("🔍 Regex Pattern Used", expanded=False):
-            st.code(pattern, language="text")
+    if not match:
+        st.error(f"❌ Test case {test_case_id} not found.")
         return None, None
 
-    current_case = current_match.group(1).strip()
-    status_placeholder.update(label=f"✅ Found test case {test_case_id} ({len(current_case)} chars)")
+    original_block = match.group(0).strip()
 
-    # ---- Construct prompt ----
-    planner_input = f"""
-You are a precise QA test case editor. Your job is to update **EXACTLY ONE** test case and output **NOTHING ELSE**.
+    # Parse block safely
+    fields, prefix, numeric_header = parse_test_case_block(original_block)
 
-**RULES - FOLLOW EXACTLY:**
-1. Output **ONLY** the updated test case block.
-2. Start with `* Test Case ID: {test_case_id}`
-3. Use `* ` prefix for every field (Title, Test Scenario, Testing Type, Test Case, Step-by-step actions, Possible Values, Expected Result).
-4. `Step-by-step actions` = **one single paragraph**, no bullets or numbers.
-5. **NO** explanations or markdown outside the test case.
-6. **DO NOT** modify any other test case.
-7. Keep all existing fields unless the instruction specifically asks to change them.
+    # Detect which field to edit
+    status_placeholder.update(label="🧠 Detecting field to edit...")
+    target_field = await detect_target_field(edit_instruction, fields)
 
+    if target_field not in fields:
+        st.error(f"❌ Invalid field detected: {target_field}")
+        return None, None
 
-**CURRENT TEST CASE:**
-{current_case}
+    original_value = fields[target_field]
 
-**USER INSTRUCTION:**
-{edit_instruction}
+    # Ask LLM to regenerate ONLY that field value
+    status_placeholder.update(label=f"✏️ Updating: {target_field}")
 
-**OUTPUT ONLY THE UPDATED BLOCK BELOW:**
+    field_prompt = f"""
+You are a strict QA editor.
+
+Instruction:
+"{edit_instruction}"
+
+Field Name:
+{target_field}
+
+Original Value:
+{original_value}
+
+Return ONLY the updated value.
+Do NOT include field name.
+Do NOT include bullets.
+Do NOT include extra text.
 """
 
-    # ---- Send to LLM ----
-    try:
-        status_placeholder.update(label="🤖 Sending edit request to LLM...")
-        st.info("🧠 Prompt sent to LLM (preview below):")
-        with st.expander("📤 LLM Input Preview", expanded=False):
-            st.code(planner_input[:1500] + ("..." if len(planner_input) > 1500 else ""), language="markdown")
+    updated_value = await user.initiate_chat(planner, field_prompt)
+    updated_value = updated_value.strip()
 
-        raw_llm_output = await user.initiate_chat(planner, planner_input)
+    # Update only target field
+    fields[target_field] = updated_value
 
-        # Show full raw output (ALWAYS)
-        st.subheader("🔍 Raw LLM Response")
-        if raw_llm_output:
-            st.code(raw_llm_output, language="markdown")
-            st.caption(f"Raw LLM output length: {len(raw_llm_output)} chars")
-        else:
-            st.error("⚠️ No output received from the LLM.")
-            return "", None
+    # Rebuild block preserving numbering + bullets
+    updated_block = rebuild_test_case_block(fields, prefix, numeric_header)
 
-    except Exception as e:
-        st.error(f"❌ Error calling LLM: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-        return str(e), None
+    # Replace safely
+    status_placeholder.update(label="🧩 Replacing test case...")
 
-    # ---- Extract test case block from response ----
-    lenient_pattern = rf'(\*\s*Test Case ID:\s*{re.escape(test_case_id.strip())}.*?)(?=\n\*\s*Test Case ID:|\Z)'
-    llm_match = re.search(lenient_pattern, raw_llm_output, re.DOTALL | re.IGNORECASE)
+    new_full_str, n_subs = re.subn(
+        pattern,
+        updated_block,
+        st.session_state.all_test_cases_str,
+        count=1,
+        flags=re.DOTALL
+    )
 
-    if not llm_match:
-        st.error("❌ LLM response did not contain a valid test case block.")
-        return raw_llm_output, None
+    if n_subs == 0:
+        st.error("❌ Replacement failed.")
+        return None, None
 
-    updated_case_str = llm_match.group(1).strip()
+    st.session_state.all_test_cases_str = (
+        new_full_str.replace("\r\n", "\n").replace("\r", "\n").strip() + "\n"
+    )
 
-    # ---- Validate header ----
-    header_check = updated_case_str.split('\n')[0].strip()
-    expected_header = f"* Test Case ID: {test_case_id}"
-    if not header_check.lower().replace(" ", "") == expected_header.lower().replace(" ", ""):
-        st.error(f"⚠️ Header mismatch in LLM output.\nGot: `{header_check}`\nExpected: `{expected_header}`")
-        return raw_llm_output, updated_case_str
+    status_placeholder.update(label="✅ Update successful", state="complete")
+    st.success(f"✅ Test case {test_case_id} updated successfully!")
 
-    # ---- Replace in master string ----
-    status_placeholder.update(label="🧩 Replacing test case in stored list...")
-    try:
-        replacement = updated_case_str + "\n"
-        # new_full_str, n_subs = re.subn(
-        #     pattern, replacement, st.session_state.all_test_cases_str,
-        #     count=1, flags=re.DOTALL
-        # )
-        new_full_str, n_subs = re.subn(
-            pattern,
-            lambda m: (m.group(1) + " " if m.group(1) else "") + updated_case_str,
-            st.session_state.all_test_cases_str,
-            count=1,
-            flags=re.DOTALL,
-            )
+    return original_block, updated_block
 
-
-        if n_subs == 0:
-            st.error("❌ Replacement failed. Pattern matched during search but not during replacement.")
-            return raw_llm_output, updated_case_str
-
-        st.session_state.all_test_cases_str = (
-            new_full_str.replace("\r\n", "\n").replace("\r", "\n").strip() + "\n"
-        )
-
-        status_placeholder.update(label=f"✅ Successfully replaced {test_case_id}", state="complete")
-        st.success(f"✅ Test case **{test_case_id}** updated successfully!")
-    except Exception as e:
-        st.error(f"❌ Error while replacing test case block: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-        return raw_llm_output, updated_case_str
-
-    # ---- Export updated cases ----
-    try:
-        parse_and_export_testcases(st.session_state.all_test_cases_str)
-    except Exception as e:
-        st.warning(f"⚠️ Export failed: {e}")
-
-    # ---- Return raw + cleaned ----
-    return raw_llm_output, updated_case_str
 
 
 # --- Streamlit UI ---
@@ -976,6 +992,7 @@ with output_container:
         # Display the raw test cases
 
         st.markdown(st.session_state.all_test_cases_str)
+
 
 
 
