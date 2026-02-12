@@ -807,9 +807,19 @@ Do NOT include extra text.
         st.error("❌ Replacement failed.")
         return None, None
 
+    # st.session_state.all_test_cases_str = (
+    #     new_full_str.replace("\r\n", "\n").replace("\r", "\n").strip() + "\n"
+    # )
     st.session_state.all_test_cases_str = (
-        new_full_str.replace("\r\n", "\n").replace("\r", "\n").strip() + "\n"
-    )
+    new_full_str.replace("\r\n", "\n").replace("\r", "\n").strip() + "\n"
+)
+
+# 🔥 IMPORTANT: Regenerate Excel file with updated data
+    try:
+        parse_and_export_testcases(st.session_state.all_test_cases_str)
+    except Exception as e:
+        st.warning(f"⚠️ Excel regeneration failed after edit: {e}")
+
 
     status_placeholder.update(label="✅ Update successful", state="complete")
     st.success(f"✅ Test case {test_case_id} updated successfully!")
@@ -992,6 +1002,7 @@ with output_container:
         # Display the raw test cases
 
         st.markdown(st.session_state.all_test_cases_str)
+
 
 
 
